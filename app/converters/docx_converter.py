@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from app.converters.base import BaseConverter, ConversionResult, ProgressCallback
+from app.converters.base import BaseConverter, CancellationCheck, ConversionResult, JobCancelledError, ProgressCallback
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +39,13 @@ class DocxConverter(BaseConverter):
         keep_images: bool = False,
         ocr: bool = False,
         progress_callback: ProgressCallback | None = None,
+        cancel_check: CancellationCheck | None = None,
     ) -> ConversionResult:
         """
         Convertit un document .docx en Markdown.
         """
+        if cancel_check and cancel_check():
+            raise JobCancelledError("Conversion Word annulée par l'utilisateur.")
         output_dir.mkdir(parents=True, exist_ok=True)
         image_dir = output_dir / "images"
         if keep_images:

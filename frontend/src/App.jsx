@@ -19,16 +19,14 @@ import {
   ChevronUp,
   Image as ImageIcon,
   ScanText,
-  Sparkles,
   Cpu,
-  Layers,
-  Minimize2,
   X,
-  ExternalLink,
-  Zap,
-  Activity,
+  StopCircle,
   CheckCircle2,
-  AlertTriangle
+  AlertCircle,
+  Clock,
+  Layers,
+  FileSpreadsheet
 } from "lucide-react";
 
 export default function App() {
@@ -46,10 +44,30 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
 
-  // Modal de chargement / Scanner interactif
+  // Pop-up modal de chargement actif
   const [activeModalJobId, setActiveModalJobId] = useState(null);
 
   const fileInputRef = useRef(null);
+  const jobsRef = useRef(jobs);
+
+  // Maintient la référence synchrone pour beforeunload
+  useEffect(() => {
+    jobsRef.current = jobs;
+  }, [jobs]);
+
+  // Interruption automatique de la conversion si l'utilisateur rafraîchit la page (F5 / Reload / Close)
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const runningJobs = Object.values(jobsRef.current).filter((j) => j.status === "running");
+      runningJobs.forEach((job) => {
+        // Envoi asynchrone garanti via Beacon API lors de la fermeture/refresh
+        navigator.sendBeacon(`/api/jobs/${job.job_id}/cancel`);
+      });
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, []);
 
   // Gestion du thème
   useEffect(() => {
@@ -63,7 +81,7 @@ export default function App() {
 
   const notify = (msg) => {
     setToastText(msg);
-    setTimeout(() => setToastText(null), 3200);
+    setTimeout(() => setToastText(null), 3000);
   };
 
   // Sélection de fichiers
@@ -84,6 +102,24 @@ export default function App() {
       const filtered = accepted.filter((f) => !existing.has(f.name + f.size));
       return [...prev, ...filtered];
     });
+  };
+
+  // Interrompre manuellement un job en cours
+  const cancelJob = async (jobId) => {
+    try {
+      await fetch(`/api/jobs/${jobId}/cancel`, { method: "POST" });
+      setJobs((prev) => ({
+        ...prev,
+        [jobId]: {
+          ...prev[jobId],
+          status: "canceled",
+          current_step: "Conversion interrompue par l'utilisateur."
+        }
+      }));
+      notify("Conversion interrompue avec succès.");
+    } catch (err) {
+      console.error("Erreur annulation :", err);
+    }
   };
 
   // Convertir UN SEUL fichier individuel
@@ -117,7 +153,7 @@ export default function App() {
           filename: fileObj.name,
           status: "running",
           progress: 10,
-          current_step: "Initialisation du moteur C++ MuPDF...",
+          current_step: "Initialisation du convertisseur...",
           elapsed_seconds: 0,
           current_page: 0,
           total_pages: 0,
@@ -128,7 +164,7 @@ export default function App() {
         }
       }));
 
-      // Ouverture immédiate du Pop-up de chargement senior UX
+      // Ouvrir immédiatement le modal de progression
       setActiveModalJobId(jobId);
 
       // Retirer ce fichier de la sélection en attente
@@ -173,7 +209,7 @@ export default function App() {
           filename: fileObj ? fileObj.name : `Document_${index + 1}`,
           status: "running",
           progress: 10,
-          current_step: "Initialisation du traitement...",
+          current_step: "Démarrage du traitement...",
           elapsed_seconds: 0,
           current_page: 0,
           total_pages: 0,
@@ -188,7 +224,7 @@ export default function App() {
       setSelectedFiles([]);
       if (fileInputRef.current) fileInputRef.current.value = "";
 
-      // Ouvrir le Pop-up sur le premier job
+      // Ouvrir le modal sur le premier job
       if (data.job_ids.length > 0) {
         setActiveModalJobId(data.job_ids[0]);
       }
@@ -216,7 +252,7 @@ export default function App() {
           if (payload.status === "done") {
             sse.close();
             setActivePreviewId((cur) => cur || jobId);
-          } else if (payload.status === "error") {
+          } else if (payload.status === "error" || payload.status === "canceled") {
             sse.close();
           }
         } catch (e) {
@@ -245,7 +281,7 @@ export default function App() {
           [jobId]: { ...prev[jobId], ...payload }
         }));
 
-        if (payload.status === "done" || payload.status === "error") {
+        if (payload.status === "done" || payload.status === "error" || payload.status === "canceled") {
           clearInterval(interval);
           if (payload.status === "done") {
             setActivePreviewId((cur) => cur || jobId);
@@ -288,12 +324,12 @@ export default function App() {
     }
   };
 
-  const getFormatClass = (name) => {
+  const getFormatBadge = (name) => {
     const ext = name.split(".").pop().toLowerCase();
-    if (ext === "pdf") return "format-badge pdf";
-    if (ext === "docx") return "format-badge docx";
-    if (ext === "pptx") return "format-badge pptx";
-    return "format-badge";
+    if (ext === "pdf") return <span className="fmt-pill fmt-pdf">PDF</span>;
+    if (ext === "docx") return <span className="fmt-pill fmt-docx">DOCX</span>;
+    if (ext === "pptx") return <span className="fmt-pill fmt-pptx">PPTX</span>;
+    return <span className="fmt-pill">{ext.toUpperCase()}</span>;
   };
 
   const formatSize = (bytes) => {
@@ -304,31 +340,29 @@ export default function App() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
   };
 
-  // Job actuellement affiché dans le Pop-up Modal
   const activeModalJob = activeModalJobId ? jobs[activeModalJobId] : null;
 
   return (
-    <div className="workspace">
-      {/* Topbar avec Logo officiel */}
-      <header className="topbar">
-        <div className="brand-section">
-          <img src="/logo.svg" alt="DocToMarkdown Logo" className="brand-logo-img" />
-          <div className="brand-title-wrap">
-            <span className="brand-name">DocToMarkdown</span>
-            <span className="brand-tag">v1.0 Pro</span>
+    <div className="app-container">
+      {/* Barre de navigation supérieure épurée */}
+      <header className="navbar">
+        <div className="nav-brand">
+          <img src="/logo.svg" alt="DocToMarkdown Logo" className="nav-logo" />
+          <div className="nav-title-group">
+            <span className="nav-name">DocToMarkdown</span>
+            <span className="nav-version">v1.0</span>
           </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-          {/* Badge Mémoire & Architecture */}
-          <div className="eco-memory-badge" title="Moteur optimisé : moins de 45 Mo de RAM">
-            <Cpu size={13} className="eco-icon" />
-            <span>Moteur Éco-RAM &bull; Multi-cœurs</span>
+        <div className="nav-actions">
+          <div className="nav-pill" title="Allocation adaptative éco-mémoire : 0 processus enfant pour les PDF standards">
+            <Cpu size={13} className="text-emerald" />
+            <span>Éco-RAM &bull; &lt; 45 Mo</span>
           </div>
 
           <button
             onClick={toggleTheme}
-            className="theme-toggle-btn"
+            className="btn-icon"
             aria-label="Changer de thème"
             title="Thème Clair / Sombre"
           >
@@ -337,18 +371,18 @@ export default function App() {
         </div>
       </header>
 
-      {/* Titre & Description de l'outil */}
-      <div className="page-intro">
-        <h1 className="page-title">Convertisseur Haute Performance vers Markdown</h1>
-        <p className="page-description">
-          Convertissez vos PDF volumineux (&gt;50 Mo), documents Word (.docx) et présentations PowerPoint (.pptx)
-          en Markdown structuré ultra-propre avec un découpage parallèle instantané et une empreinte mémoire minimale.
+      {/* Hero section moderne & concise */}
+      <section className="hero">
+        <h1 className="hero-title">Convertissez vos documents en Markdown structuré</h1>
+        <p className="hero-subtitle">
+          Traitement ultra-rapide et éco-mémoire pour vos fichiers <strong>PDF</strong>, <strong>Word (.docx)</strong> et <strong>PowerPoint (.pptx)</strong>.
+          Zéro encombrement disque, résultats prêts pour les LLM.
         </p>
-      </div>
+      </section>
 
-      {/* Zone de Glisser-Déposer avec animations réactives */}
+      {/* Zone de Glisser-Déposer moderne & minimaliste */}
       <div
-        className={`drop-zone ${isDragActive ? "active" : ""}`}
+        className={`drop-area ${isDragActive ? "drag-over" : ""}`}
         onDragOver={(e) => {
           e.preventDefault();
           setIsDragActive(true);
@@ -370,48 +404,48 @@ export default function App() {
           onChange={(e) => handleFiles(e.target.files)}
         />
 
-        {/* Effet Scanner Laser d'attente */}
-        <div className="drop-beam" />
-
-        <div className="drop-icon-box">
-          <Upload size={22} strokeWidth={2.2} />
+        <div className="drop-icon-circle">
+          <Upload size={22} strokeWidth={2} />
         </div>
 
-        <div className="drop-title">
-          Glissez-déposez vos fichiers ici, ou <span className="browse-link">parcourez votre ordinateur</span>
+        <div className="drop-text-main">
+          Glissez-déposez vos fichiers ici, ou <span className="text-accent">cliquez pour parcourir</span>
         </div>
-        <div className="drop-hint">
-          PDF volumineux (&gt;50 Mo) &bull; Word (.docx) &bull; PowerPoint (.pptx)
+        <div className="drop-text-sub">
+          Accepte les PDF volumineux (&gt;50 Mo), Word (.docx) et présentations PowerPoint (.pptx)
         </div>
       </div>
 
-      {/* Barre d'options & Déclenchement */}
-      <div className="settings-strip">
-        <div className="toggle-group">
-          <div
-            className={`toggle-item ${keepImages ? "checked" : ""}`}
-            onClick={() => setKeepImages(!keepImages)}
-            title="Extrait les images dans un sous-dossier et crée un pack .zip complet"
-          >
-            <div className="switch-control" />
-            <span className="toggle-label">Extraire les images (.zip)</span>
-          </div>
+      {/* Barre de contrôles et options */}
+      <div className="controls-bar">
+        <div className="switches-container">
+          <label className="switch-row" title="Extrait les images dans un dossier images/ et produit un pack .zip">
+            <input
+              type="checkbox"
+              checked={keepImages}
+              onChange={(e) => setKeepImages(e.target.checked)}
+            />
+            <span className="switch-slider" />
+            <span className="switch-text">Extraire les images (.zip)</span>
+          </label>
 
-          <div
-            className={`toggle-item ${ocrEnabled ? "checked" : ""}`}
-            onClick={() => setOcrEnabled(!ocrEnabled)}
-            title="Active la reconnaissance optique Tesseract sur les pages scannées"
-          >
-            <div className="switch-control" />
-            <span className="toggle-label">OCR automatique (pages scannées)</span>
-          </div>
+          <label className="switch-row" title="Active Tesseract OCR uniquement sur les pages scannées sans texte sélectionnable">
+            <input
+              type="checkbox"
+              checked={ocrEnabled}
+              onChange={(e) => setOcrEnabled(e.target.checked)}
+            />
+            <span className="switch-slider" />
+            <span className="switch-text">OCR automatique (pages scannées)</span>
+          </label>
         </div>
 
-        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+        <div className="controls-actions">
           {selectedFiles.length > 1 && (
             <button
               onClick={() => setSelectedFiles([])}
-              className="btn-subtle"
+              className="btn-ghost"
+              title="Vider la sélection"
             >
               <Trash2 size={13} /> Tout retirer
             </button>
@@ -420,12 +454,12 @@ export default function App() {
           <button
             onClick={convertAllFiles}
             disabled={selectedFiles.length === 0 || isProcessing}
-            className="btn-primary-action"
+            className="btn-primary"
           >
             {isProcessing ? (
               <>
                 <RotateCw size={14} className="animate-spin" />
-                <span>Conversion...</span>
+                <span>Conversion en cours...</span>
               </>
             ) : (
               <>
@@ -437,73 +471,66 @@ export default function App() {
         </div>
       </div>
 
-      {/* Accordéon explicatif interactif */}
-      <div className="info-accordion">
-        <div className="info-accordion-header" onClick={() => setShowInfo(!showInfo)}>
+      {/* Accordéon explicatif sobre & discret */}
+      <div className="accordion-wrapper">
+        <div className="accordion-trigger" onClick={() => setShowInfo(!showInfo)}>
           <span style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <HelpCircle size={15} /> Comprendre les options : Extraire les images &amp; OCR automatique
+            <HelpCircle size={14} /> Aide : Quand activer l'extraction d'images ou l'OCR ?
           </span>
-          {showInfo ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          {showInfo ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
         </div>
 
         {showInfo && (
-          <div className="info-accordion-body">
-            <div className="info-box">
-              <h4><ImageIcon size={15} color="var(--accent-blue)" /> Extraire les images</h4>
+          <div className="accordion-content">
+            <div className="help-card">
+              <div className="help-title"><ImageIcon size={14} className="text-accent" /> Extraire les images</div>
               <p>
-                <strong>Désactivé (par défaut) :</strong> Vitesse maximale et consommation mémoire ultra-faible. Les images binaires sont ignorées pour convertir un gros fichier en quelques secondes.<br />
-                <strong>Activé :</strong> Chaque image du document est isolée et référencée dans le Markdown. Vous téléchargez un pack <strong>.zip</strong> complet contenant le Markdown et son dossier d'images.
+                <strong>Désactivé (par défaut) :</strong> Vitesse maximale et légèreté. Le texte et la mise en page sont extraits en priorité.<br />
+                <strong>Activé :</strong> Chaque figure ou photo est enregistrée et liée dans le Markdown sous <code>![image](images/...)</code> au sein d'une archive .zip.
               </p>
             </div>
 
-            <div className="info-box">
-              <h4><ScanText size={15} color="var(--accent-emerald)" /> OCR automatique (Tesseract)</h4>
+            <div className="help-card">
+              <div className="help-title"><ScanText size={14} className="text-emerald" /> OCR automatique</div>
               <p>
-                <strong>Quand l'activer ?</strong> Sur des <strong>PDF scannés</strong> (photos de documents papier où le texte n'est pas sélectionnable à la souris).<br />
-                <strong>Comment ça marche ?</strong> Tesseract analyse visuellement les formes des lettres pour les transcrire en texte. C'est plus lent (1 à 2s par page scannée), mais indispensable si la page est une image plate.
+                <strong>Pour les documents normaux :</strong> Laissez désactivé pour convertir en 2 à 4 secondes.<br />
+                <strong>Pour les PDF scannés :</strong> Activez cette option si votre fichier est une photocopie où le texte n'est pas sélectionnable à la souris.
               </p>
             </div>
           </div>
         )}
       </div>
 
-      {/* Liste des fichiers sélectionnés : Conversion Un par Un possible */}
+      {/* Liste des fichiers prêts à être convertis (Conversion unitaire possible) */}
       {selectedFiles.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-          <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-            Fichiers prêts ({selectedFiles.length}) &bull; Vous pouvez les convertir individuellement ou tous ensemble :
+        <div className="files-section">
+          <div className="section-label">
+            Fichiers prêts ({selectedFiles.length}) &bull; Vous pouvez convertir individuellement ou par lot :
           </div>
 
-          <div className="staged-files-list">
+          <div className="file-cards-list">
             {selectedFiles.map((file, idx) => (
-              <div key={idx} className="staged-row">
-                <div style={{ display: "flex", alignItems: "center", gap: "0.65rem" }}>
-                  <span className={getFormatClass(file.name)}>
-                    {file.name.split(".").pop().toUpperCase()}
-                  </span>
-                  <span style={{ fontFamily: "var(--font-mono)", fontWeight: 500 }}>{file.name}</span>
-                  <span style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>
-                    ({formatSize(file.size)})
-                  </span>
+              <div key={idx} className="file-card">
+                <div className="file-card-left">
+                  {getFormatBadge(file.name)}
+                  <span className="file-card-name">{file.name}</span>
+                  <span className="file-card-size">{formatSize(file.size)}</span>
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                  {/* Bouton de conversion individuelle */}
+                <div className="file-card-right">
                   <button
                     onClick={() => convertSingleFile(file)}
                     disabled={isProcessing}
-                    className="btn-convert-single"
+                    className="btn-action-single"
                     title="Convertir uniquement ce fichier"
                   >
-                    <Play size={12} fill="currentColor" /> Convertir ce fichier
+                    <Play size={12} fill="currentColor" /> Convertir
                   </button>
 
-                  {/* Bouton de suppression individuelle */}
                   <button
                     onClick={() => setSelectedFiles((prev) => prev.filter((_, i) => i !== idx))}
-                    className="btn-subtle"
-                    style={{ padding: "0.35rem 0.5rem" }}
-                    title="Retirer ce fichier"
+                    className="btn-icon-subtle"
+                    title="Retirer"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -514,106 +541,106 @@ export default function App() {
         </div>
       )}
 
-      {/* File de traitement avec animation de scanner */}
+      {/* File de traitement des conversions */}
       {Object.keys(jobs).length > 0 && (
-        <section style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-              File de conversion ({Object.keys(jobs).length})
-            </span>
+        <section className="queue-section">
+          <div className="queue-header">
+            <span className="section-label">File des conversions ({Object.keys(jobs).length})</span>
             <button
               onClick={() => {
                 setJobs({});
                 setActiveModalJobId(null);
               }}
-              className="btn-subtle"
-              style={{ fontSize: "0.75rem", padding: "0.25rem 0.55rem" }}
+              className="btn-ghost btn-sm"
             >
               Effacer la file
             </button>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem" }}>
+          <div className="queue-list">
             {Object.values(jobs).map((job) => (
-              <div
-                key={job.job_id}
-                className={`queue-row-card ${job.status === "running" ? "running" : ""}`}
-              >
-                <div className="row-top">
-                  <div className="file-info-group">
-                    <span className={getFormatClass(job.filename)}>
-                      {job.filename.split(".").pop().toUpperCase()}
-                    </span>
-                    <span className="file-name-text">{job.filename}</span>
+              <div key={job.job_id} className={`queue-item ${job.status}`}>
+                <div className="queue-item-top">
+                  <div className="queue-item-file">
+                    {getFormatBadge(job.filename)}
+                    <span className="queue-item-title">{job.filename}</span>
                   </div>
 
-                  <div className="status-badge-inline">
+                  <div className="queue-item-state">
                     {job.status === "running" && (
-                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
                         <button
                           onClick={() => setActiveModalJobId(job.job_id)}
-                          className="btn-open-scanner"
-                          title="Ouvrir la vue détaillée de conversion"
+                          className="btn-view-progress"
                         >
-                          <Activity size={13} className="animate-pulse" /> Scanner en direct
+                          Suivi
                         </button>
-                        <span className="status-badge-inline running">
-                          <RotateCw size={13} className="animate-spin" />
-                          <span>{job.elapsed_seconds}s &bull; {Math.round(job.progress)}%</span>
+                        <button
+                          onClick={() => cancelJob(job.job_id)}
+                          className="btn-stop-subtle"
+                          title="Arrêter cette conversion"
+                        >
+                          <StopCircle size={13} /> Arrêter
+                        </button>
+                        <span className="status-text running">
+                          <RotateCw size={12} className="animate-spin" />
+                          <span>{job.elapsed_seconds}s ({Math.round(job.progress)}%)</span>
                         </span>
                       </div>
                     )}
 
                     {job.status === "done" && (
-                      <span className="status-badge-inline done">
-                        <Check size={14} strokeWidth={2.5} />
-                        <span>Terminé en {job.elapsed_seconds}s</span>
-                      </span>
-                    )}
-
-                    {job.status === "error" && (
-                      <span className="status-badge-inline error">
-                        Échec
-                      </span>
-                    )}
-
-                    {job.status === "done" && (
-                      <div style={{ display: "flex", gap: "0.4rem", marginLeft: "0.5rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        <span className="status-text done">
+                          <Check size={13} strokeWidth={2.5} />
+                          <span>Prêt ({job.elapsed_seconds}s)</span>
+                        </span>
                         <button
                           onClick={() => setActivePreviewId(job.job_id)}
-                          className="btn-subtle"
-                          style={{ borderColor: "var(--border-focus)", color: "var(--text-primary)" }}
+                          className="btn-secondary btn-sm"
                         >
                           Aperçu
                         </button>
                         <a
                           href={`/api/jobs/${job.job_id}/download?format=md`}
-                          className="btn-subtle"
+                          className="btn-secondary btn-sm"
                         >
-                          <Download size={13} /> .md
+                          <Download size={12} /> .md
                         </a>
                         {(job.has_images || job.has_archive) && (
                           <a
                             href={`/api/jobs/${job.job_id}/download?format=zip`}
-                            className="btn-subtle"
+                            className="btn-secondary btn-sm"
                           >
-                            <Archive size={13} /> .zip
+                            <Archive size={12} /> .zip
                           </a>
                         )}
                       </div>
                     )}
+
+                    {job.status === "canceled" && (
+                      <span className="status-text canceled">
+                        <AlertCircle size={13} /> Interrompu
+                      </span>
+                    )}
+
+                    {job.status === "error" && (
+                      <span className="status-text error">
+                        <AlertCircle size={13} /> Échec
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                {/* Barre de progression fluide */}
-                <div className="progress-rail">
+                {/* Barre de progression épurée */}
+                <div className="clean-progress-track">
                   <div
-                    className={`progress-indicator ${job.status}`}
+                    className={`clean-progress-bar ${job.status}`}
                     style={{ width: `${job.progress}%` }}
                   />
                 </div>
 
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                <div className="queue-item-meta">
                   <span>{job.current_step}</span>
                   {job.total_pages > 0 && (
                     <span>Page {job.current_page} / {job.total_pages}</span>
@@ -621,16 +648,10 @@ export default function App() {
                 </div>
 
                 {job.warnings && job.warnings.length > 0 && (
-                  <div style={{ fontSize: "0.78rem", color: "var(--accent-amber)" }}>
+                  <div className="queue-warnings">
                     {job.warnings.map((w, idx) => (
                       <div key={idx}>⚠️ {w}</div>
                     ))}
-                  </div>
-                )}
-
-                {job.status === "error" && (
-                  <div style={{ fontSize: "0.8rem", color: "var(--accent-rose)" }}>
-                    ❌ {job.error || "Une erreur inattendue est survenue."}
                   </div>
                 )}
               </div>
@@ -641,70 +662,63 @@ export default function App() {
 
       {/* Visualiseur Markdown Pro */}
       {previewContent && (
-        <section className="markdown-workbench">
-          <div className="workbench-toolbar">
-            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-              <FileCode size={16} color="var(--accent-blue)" />
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.85rem", fontWeight: 600 }}>
-                {previewContent.filename}.md
-              </span>
+        <section className="workbench">
+          <div className="workbench-header">
+            <div className="workbench-title">
+              <FileCode size={16} className="text-accent" />
+              <span className="workbench-file-name">{previewContent.filename}.md</span>
               {previewContent.is_truncated && (
-                <span style={{ fontSize: "0.75rem", color: "var(--accent-amber)" }}>
-                  (Aperçu partiel 200 Ko)
-                </span>
+                <span className="text-muted text-xs">(Aperçu 200 Ko)</span>
               )}
             </div>
 
-            {/* Sélecteur d'onglets épuré */}
-            <div className="segmented-control">
+            <div className="workbench-segmented">
               <button
-                className={`segment-btn ${viewTab === "rendered" ? "active" : ""}`}
+                className={`tab-btn ${viewTab === "rendered" ? "active" : ""}`}
                 onClick={() => setViewTab("rendered")}
               >
-                Rendu HTML
+                Rendu visuel
               </button>
               <button
-                className={`segment-btn ${viewTab === "raw" ? "active" : ""}`}
+                className={`tab-btn ${viewTab === "raw" ? "active" : ""}`}
                 onClick={() => setViewTab("raw")}
               >
-                Markdown Brut
+                Code Markdown
               </button>
             </div>
 
-            {/* Actions de téléchargement et copie */}
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button onClick={copyToClipboard} className="btn-subtle">
-                {copied ? <Check size={14} color="var(--accent-emerald)" /> : <Copy size={14} />}
+            <div className="workbench-actions">
+              <button onClick={copyToClipboard} className="btn-secondary btn-sm">
+                {copied ? <Check size={13} className="text-emerald" /> : <Copy size={13} />}
                 <span>{copied ? "Copié" : "Copier"}</span>
               </button>
 
               <a
                 href={`/api/jobs/${previewContent.job_id}/download?format=md`}
-                className="btn-subtle"
+                className="btn-secondary btn-sm"
               >
-                <Download size={14} /> Télécharger .md
+                <Download size={13} /> Télécharger (.md)
               </a>
 
               {previewContent.has_images && (
                 <a
                   href={`/api/jobs/${previewContent.job_id}/download?format=zip`}
-                  className="btn-primary-action"
-                  style={{ textDecoration: "none", padding: "0.45rem 0.85rem" }}
+                  className="btn-primary btn-sm"
                 >
-                  <Archive size={14} /> Pack .zip
+                  <Archive size={13} /> Pack (.zip)
                 </a>
               )}
             </div>
           </div>
 
-          <div className="workbench-content">
+          <div className="workbench-viewer">
             {viewTab === "rendered" ? (
               <div
-                className="md-output"
+                className="rendered-markdown"
                 dangerouslySetInnerHTML={{ __html: marked.parse(previewContent.markdown || "") }}
               />
             ) : (
-              <pre className="md-raw-code">
+              <pre className="raw-markdown">
                 <code>{previewContent.markdown}</code>
               </pre>
             )}
@@ -713,170 +727,166 @@ export default function App() {
       )}
 
       {/* ============================================================================== */}
-      {/* POP-UP DE CHARGEMENT SENIOR UX/UI (MODAL INTERACTIF AVEC SCANNER HOLOGRAPHIQUE) */}
+      {/* POP-UP MODAL DE CHARGEMENT ÉPURÉ & PROFESSIONNEL (AVEC BOUTON ARRÊT / REFRESH) */}
       {/* ============================================================================== */}
       {activeModalJob && (
-        <div className="modal-backdrop" onClick={(e) => {
+        <div className="clean-modal-backdrop" onClick={(e) => {
           if (e.target === e.currentTarget) setActiveModalJobId(null);
         }}>
-          <div className="modal-scanner-card" onClick={(e) => e.stopPropagation()}>
+          <div className="clean-modal-dialog">
             {/* Header du modal */}
-            <div className="modal-header">
-              <div className="modal-file-info">
-                <span className={getFormatClass(activeModalJob.filename)}>
-                  {activeModalJob.filename.split(".").pop().toUpperCase()}
-                </span>
-                <div>
-                  <h3 className="modal-file-title">{activeModalJob.filename}</h3>
-                  <div className="modal-telemetry-row">
-                    <span className="telemetry-pill eco">
-                      <Zap size={11} /> RAM Éco : &lt; 45 Mo
-                    </span>
-                    <span className="telemetry-pill">
-                      <Cpu size={11} /> Moteur C++ MuPDF
-                    </span>
-                    <span className="telemetry-pill">
-                      <Layers size={11} /> Stream Direct RAM
-                    </span>
-                  </div>
-                </div>
+            <div className="clean-modal-header">
+              <div className="clean-modal-file">
+                {getFormatBadge(activeModalJob.filename)}
+                <span className="clean-modal-title">{activeModalJob.filename}</span>
               </div>
-
               <button
-                className="modal-close-btn"
                 onClick={() => setActiveModalJobId(null)}
-                title="Minimiser / Traiter en arrière-plan"
+                className="clean-modal-close"
+                title="Fermer ou réduire le dialogue"
               >
-                <Minimize2 size={16} />
+                <X size={16} />
               </button>
             </div>
 
-            {/* Corps du modal : État en cours vs État terminé */}
+            {/* Corps du modal : En cours */}
             {activeModalJob.status === "running" && (
-              <div className="modal-body-scanning">
-                {/* Visualiseur Holographique de Document & Faisceau Laser */}
-                <div className="holo-doc-container">
-                  <div className="holo-doc-sheet">
-                    <div className="holo-line header" />
-                    <div className="holo-line p1" />
-                    <div className="holo-line p2" />
-                    <div className="holo-line p3" />
-                    <div className="holo-line p4" />
-                    <div className="holo-table">
-                      <div className="holo-cell" />
-                      <div className="holo-cell" />
-                      <div className="holo-cell" />
-                    </div>
-                  </div>
-
-                  {/* Faisceau laser scanner traversant */}
-                  <div className="holo-scanner-laser" />
-
-                  {/* Vagues radar circulaires en arrière-plan */}
-                  <div className="holo-radar-ring ring-1" />
-                  <div className="holo-radar-ring ring-2" />
-                </div>
-
-                {/* Métriques d'avancement dynamiques */}
-                <div className="modal-metrics-grid">
-                  <div className="metric-box">
-                    <span className="metric-label">Progression</span>
-                    <span className="metric-value highlight">{Math.round(activeModalJob.progress)}%</span>
-                  </div>
-                  <div className="metric-box">
-                    <span className="metric-label">Pages traitées</span>
-                    <span className="metric-value">
-                      {activeModalJob.total_pages > 0
-                        ? `${activeModalJob.current_page} / ${activeModalJob.total_pages}`
-                        : "Comptage..."}
-                    </span>
-                  </div>
-                  <div className="metric-box">
-                    <span className="metric-label">Temps écoulé</span>
-                    <span className="metric-value">{activeModalJob.elapsed_seconds}s</span>
+              <div className="clean-modal-body">
+                {/* Jauge de progression circulaire moderne */}
+                <div className="progress-ring-box">
+                  <svg className="progress-ring-svg" width="100" height="100">
+                    <circle
+                      className="progress-ring-bg"
+                      stroke="currentColor"
+                      strokeWidth="6"
+                      fill="transparent"
+                      r="42"
+                      cx="50"
+                      cy="50"
+                    />
+                    <circle
+                      className="progress-ring-indicator"
+                      stroke="currentColor"
+                      strokeWidth="6"
+                      strokeDasharray={264}
+                      strokeDashoffset={264 - (264 * Math.max(5, activeModalJob.progress)) / 100}
+                      strokeLinecap="round"
+                      fill="transparent"
+                      r="42"
+                      cx="50"
+                      cy="50"
+                    />
+                  </svg>
+                  <div className="progress-ring-text">
+                    <span className="progress-ring-percent">{Math.round(activeModalJob.progress)}%</span>
                   </div>
                 </div>
 
-                {/* Grand indicateur de progression à lueur néon */}
-                <div className="modal-neon-rail">
-                  <div
-                    className="modal-neon-fill"
-                    style={{ width: `${activeModalJob.progress}%` }}
-                  />
+                {/* Métriques claires */}
+                <div className="clean-modal-info">
+                  <h4 className="clean-modal-status-text">{activeModalJob.current_step}</h4>
+                  <div className="clean-modal-details">
+                    {activeModalJob.total_pages > 0 && (
+                      <span>Page {activeModalJob.current_page} sur {activeModalJob.total_pages}</span>
+                    )}
+                    <span>&bull;</span>
+                    <span>Temps : {activeModalJob.elapsed_seconds}s</span>
+                  </div>
                 </div>
 
-                {/* Étape textuelle active */}
-                <div className="modal-step-status">
-                  <RotateCw size={14} className="animate-spin" color="var(--accent-blue)" />
-                  <span>{activeModalJob.current_step}</span>
-                </div>
-
-                <div className="modal-hint-footer">
-                  Vous pouvez réduire cette fenêtre à tout moment, la conversion continue sans interruption.
+                {/* Bouton d'arrêt d'exécution explicite */}
+                <div className="clean-modal-footer">
+                  <button
+                    onClick={() => cancelJob(activeModalJob.job_id)}
+                    className="btn-danger-outline"
+                  >
+                    <StopCircle size={15} /> Arrêter la conversion
+                  </button>
+                  <button
+                    onClick={() => setActiveModalJobId(null)}
+                    className="btn-ghost btn-sm"
+                  >
+                    Réduire en tâche de fond
+                  </button>
                 </div>
               </div>
             )}
 
-            {/* État Terminé avec succès */}
+            {/* Corps du modal : Terminé avec succès */}
             {activeModalJob.status === "done" && (
-              <div className="modal-body-success">
-                <div className="success-halo-icon">
-                  <CheckCircle2 size={48} color="var(--accent-emerald)" />
+              <div className="clean-modal-body success-state">
+                <div className="success-badge-circle">
+                  <CheckCircle2 size={36} className="text-emerald" />
                 </div>
-
-                <h4 className="success-headline">Conversion réussie avec succès !</h4>
-                <p className="success-subtext">
-                  Le document a été transformé en Markdown structuré en seulement <strong>{activeModalJob.elapsed_seconds} seconde(s)</strong> avec une empreinte RAM minimale.
+                <h3>Conversion terminée !</h3>
+                <p className="text-muted text-sm">
+                  Document transformé avec succès en <strong>{activeModalJob.elapsed_seconds} seconde(s)</strong>.
                 </p>
 
-                <div className="modal-action-buttons">
+                <div className="modal-cta-row">
                   <button
                     onClick={() => {
                       setActivePreviewId(activeModalJob.job_id);
                       setActiveModalJobId(null);
                     }}
-                    className="btn-primary-action"
+                    className="btn-primary"
                   >
-                    <FileText size={15} /> Voir l'aperçu complet
+                    <FileText size={14} /> Voir l'aperçu
                   </button>
 
                   <a
                     href={`/api/jobs/${activeModalJob.job_id}/download?format=md`}
-                    className="btn-subtle"
-                    style={{ textDecoration: "none", padding: "0.6rem 1rem", fontSize: "0.9rem" }}
+                    className="btn-secondary"
                   >
-                    <Download size={15} /> Télécharger (.md)
+                    <Download size={14} /> Télécharger .md
                   </a>
 
                   {(activeModalJob.has_images || activeModalJob.has_archive) && (
                     <a
                       href={`/api/jobs/${activeModalJob.job_id}/download?format=zip`}
-                      className="btn-subtle"
-                      style={{ textDecoration: "none", padding: "0.6rem 1rem", fontSize: "0.9rem" }}
+                      className="btn-secondary"
                     >
-                      <Archive size={15} /> Télécharger (.zip)
+                      <Archive size={14} /> Pack .zip
                     </a>
                   )}
                 </div>
               </div>
             )}
 
-            {/* État Erreur */}
-            {activeModalJob.status === "error" && (
-              <div className="modal-body-error">
-                <div className="error-halo-icon">
-                  <AlertTriangle size={48} color="var(--accent-rose)" />
+            {/* Corps du modal : Interrompu */}
+            {activeModalJob.status === "canceled" && (
+              <div className="clean-modal-body canceled-state">
+                <div className="canceled-badge-circle">
+                  <StopCircle size={36} className="text-muted" />
                 </div>
-
-                <h4 className="error-headline">Échec de la conversion</h4>
-                <p className="error-subtext">
-                  {activeModalJob.error || "Une erreur inattendue est survenue."}
+                <h3>Conversion interrompue</h3>
+                <p className="text-muted text-sm">
+                  Le traitement a été arrêté. Les fichiers temporaires ont été immédiatement purgés du système.
                 </p>
-
                 <button
                   onClick={() => setActiveModalJobId(null)}
-                  className="btn-subtle"
-                  style={{ alignSelf: "center", marginTop: "1rem" }}
+                  className="btn-secondary btn-sm"
+                  style={{ marginTop: "1rem" }}
+                >
+                  Fermer
+                </button>
+              </div>
+            )}
+
+            {/* Corps du modal : Échec */}
+            {activeModalJob.status === "error" && (
+              <div className="clean-modal-body error-state">
+                <div className="error-badge-circle">
+                  <AlertCircle size={36} className="text-danger" />
+                </div>
+                <h3>Échec de la conversion</h3>
+                <p className="text-muted text-sm">
+                  {activeModalJob.error || "Une erreur inattendue est survenue."}
+                </p>
+                <button
+                  onClick={() => setActiveModalJobId(null)}
+                  className="btn-secondary btn-sm"
+                  style={{ marginTop: "1rem" }}
                 >
                   Fermer
                 </button>
@@ -888,7 +898,7 @@ export default function App() {
 
       {/* Toast minimal */}
       {toastText && (
-        <div className="minimal-toast">
+        <div className="clean-toast">
           <span>{toastText}</span>
         </div>
       )}

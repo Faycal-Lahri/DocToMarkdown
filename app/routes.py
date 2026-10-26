@@ -27,6 +27,7 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Reque
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from app.config import settings
+from app.converters.base import JobCancelledError
 from app.converters.factory import get_converter
 from app.jobs import JobStatus, job_manager
 from app.security import (
@@ -88,6 +89,7 @@ async def _run_conversion_in_background(job_id: str) -> None:
             keep_images=job.keep_images,
             ocr=job.ocr,
             progress_callback=_sync_progress_callback,
+            cancel_check=lambda: job_manager.is_job_cancelled(job_id),
         )
 
         # 3. Zéro persistance disque : Suppression immédiate du fichier source téléversé
@@ -149,6 +151,17 @@ async def _run_conversion_in_background(job_id: str) -> None:
         )
         logger.info("Job [%s] converti en mémoire (Zero-Disk) avec succès (%s)", job_id, job.original_filename)
 
+    except JobCancelledError:
+        logger.info("Job [%s] interrompu par l'utilisateur.", job_id)
+        if job.storage_path and job.storage_path.exists():
+            job.storage_path.unlink(missing_ok=True)
+        if job.output_dir and job.output_dir.exists():
+            shutil.rmtree(job.output_dir, ignore_errors=True)
+        job_manager.update_job(
+            job_id,
+            status=JobStatus.CANCELED,
+            current_step="Conversion interrompue par l'utilisateur.",
+        )
     except EncryptedPdfError as e:
         logger.warning("Job [%s] en échec (PDF protégé) : %s", job_id, e)
         job_manager.update_job(
@@ -160,6 +173,9 @@ async def _run_conversion_in_background(job_id: str) -> None:
         logger.warning("Job [%s] en échec de validation : %s", job_id, e)
         job_manager.update_job(job_id, status=JobStatus.ERROR, error_message=str(e))
     except Exception as exc:
+        if job_manager.is_job_cancelled(job_id):
+            logger.info("Job [%s] a été annulé par l'utilisateur.", job_id)
+            return
         logger.exception("Erreur inattendue lors de la conversion du job [%s] : %s", job_id, exc)
         job_manager.update_job(
             job_id,
@@ -381,6 +397,26 @@ async def delete_job(job_id: str):
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job introuvable.")
     return JSONResponse(content={"message": "Job et fichiers supprimés avec succès."})
+
+
+@router.post("/jobs/{job_id}/cancel")
+async def cancel_job_endpoint(job_id: str):
+    """
+    Interrompt immédiatement la conversion d'un job en cours.
+    Appelé lors d'un arrêt utilisateur ou lors du rafraîchissement/fermeture du navigateur.
+    """
+    job = job_manager.get_job(job_id)
+    if not job:
+        return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"detail": "Job introuvable."})
+
+    success = job_manager.cancel_job(job_id)
+    return JSONResponse(
+        content={
+            "job_id": job_id,
+            "status": "canceled" if success else job.status.value,
+            "message": "Conversion interrompue avec succès." if success else "Le job est déjà finalisé ou arrêté.",
+        }
+    )
 
 
 @router.get("/health")

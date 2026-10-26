@@ -42,9 +42,16 @@ class ConversionResult:
     pages_count: int = 1
 
 
+class JobCancelledError(Exception):
+    """Exception levée lorsqu'une conversion est annulée par l'utilisateur."""
+
+    pass
+
+
 # Signature du callback de progression :
 # (pourcentage: float, page_en_cours: int, total_pages: int, message_etape: str) -> None
 ProgressCallback = Callable[[float, int, int, str], None]
+CancellationCheck = Callable[[], bool]
 
 
 class BaseConverter(ABC):
@@ -60,6 +67,7 @@ class BaseConverter(ABC):
         keep_images: bool = False,
         ocr: bool = False,
         progress_callback: ProgressCallback | None = None,
+        cancel_check: CancellationCheck | None = None,
     ) -> ConversionResult:
         """
         Convertit un document en Markdown.

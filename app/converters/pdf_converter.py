@@ -45,7 +45,7 @@ import pymupdf
 import pymupdf4llm
 
 from app.config import settings
-from app.converters.base import BaseConverter, ConversionResult, ProgressCallback
+from app.converters.base import BaseConverter, CancellationCheck, ConversionResult, JobCancelledError, ProgressCallback
 from app.security import EncryptedPdfError
 
 logger = logging.getLogger(__name__)
@@ -217,6 +217,7 @@ class PdfConverter(BaseConverter):
         keep_images: bool = False,
         ocr: bool = False,
         progress_callback: ProgressCallback | None = None,
+        cancel_check: CancellationCheck | None = None,
     ) -> ConversionResult:
         """
         Exécute la conversion complète d'un document PDF.
@@ -228,6 +229,9 @@ class PdfConverter(BaseConverter):
         4. Suivi de progression en temps réel pour le client SSE.
         5. Réassemblage ordonné et écriture du résultat Markdown.
         """
+        if cancel_check and cancel_check():
+            raise JobCancelledError("Conversion PDF annulée par l'utilisateur.")
+
         output_dir.mkdir(parents=True, exist_ok=True)
         image_dir = output_dir / "images"
         if keep_images:
@@ -316,6 +320,10 @@ class PdfConverter(BaseConverter):
                 }
 
                 for future in concurrent.futures.as_completed(futures_map):
+                    if cancel_check and cancel_check():
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        raise JobCancelledError("Conversion PDF interrompue par l'utilisateur.")
+
                     idx, page_count = futures_map[future]
                     try:
                         res = future.result()

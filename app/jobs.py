@@ -42,6 +42,7 @@ class JobStatus(StrEnum):
     RUNNING = "running"  # Traitement en cours (pages en conversion)
     DONE = "done"  # Conversion terminée avec succès
     ERROR = "error"  # Erreur lors du traitement
+    CANCELED = "canceled"  # Annulé par l'utilisateur (refresh ou arrêt volontaire)
 
 
 @dataclass
@@ -183,10 +184,14 @@ class JobManager:
         if not job:
             return None
 
+        if job.status == JobStatus.CANCELED:
+            # Le job a été annulé par l'utilisateur, ne pas écraser son état
+            return job
+
         # Gestion des horodatages de début et de fin
         if status == JobStatus.RUNNING and job.started_at is None:
             job.started_at = time.time()
-        elif status in (JobStatus.DONE, JobStatus.ERROR) and job.completed_at is None:
+        elif status in (JobStatus.DONE, JobStatus.ERROR, JobStatus.CANCELED) and job.completed_at is None:
             job.completed_at = time.time()
 
         if status is not None:
@@ -304,6 +309,43 @@ class JobManager:
             logger.error("Erreur lors de la suppression des fichiers du job [%s]: %s", job_id, e)
 
         return True
+
+    def cancel_job(self, job_id: str) -> bool:
+        """
+        Arrête immédiatement un job en cours et notifie les abonnés SSE.
+        """
+        job = self.get_job(job_id)
+        if not job:
+            return False
+
+        if job.status in (JobStatus.DONE, JobStatus.ERROR, JobStatus.CANCELED):
+            return False
+
+        job.status = JobStatus.CANCELED
+        job.current_step = "Conversion interrompue par l'utilisateur."
+        job.completed_at = time.time()
+
+        # Suppression immédiate des fichiers temporaires
+        try:
+            if job.storage_path and job.storage_path.exists():
+                job.storage_path.unlink(missing_ok=True)
+            if job.output_dir and job.output_dir.exists():
+                import shutil
+
+                shutil.rmtree(job.output_dir, ignore_errors=True)
+        except Exception as e:
+            logger.warning("Erreur nettoyage job annulé [%s]: %s", job_id, e)
+
+        logger.info("Job [%s] a été annulé par l'utilisateur.", job_id)
+        self._broadcast_job_event(job)
+        return True
+
+    def is_job_cancelled(self, job_id: str) -> bool:
+        """
+        Vérifie si un job a été marqué comme annulé.
+        """
+        job = self.get_job(job_id)
+        return job is not None and job.status == JobStatus.CANCELED
 
     def get_expired_jobs(self, ttl_seconds: int = settings.STORAGE_TTL_SECONDS) -> list[str]:
         """

@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from app.converters.base import BaseConverter, ConversionResult, ProgressCallback
+from app.converters.base import BaseConverter, CancellationCheck, ConversionResult, JobCancelledError, ProgressCallback
 
 logger = logging.getLogger(__name__)
 
@@ -38,10 +38,13 @@ class PptxConverter(BaseConverter):
         keep_images: bool = False,
         ocr: bool = False,
         progress_callback: ProgressCallback | None = None,
+        cancel_check: CancellationCheck | None = None,
     ) -> ConversionResult:
         """
         Convertit une présentation .pptx en Markdown.
         """
+        if cancel_check and cancel_check():
+            raise JobCancelledError("Conversion PowerPoint annulée par l'utilisateur.")
         from pptx import Presentation
 
         output_dir.mkdir(parents=True, exist_ok=True)
