@@ -84,6 +84,36 @@ def _convert_pdf_batch_worker(
     warnings: list[str] = []
     extracted_images: list[str] = []
 
+    # Vérification intelligente de la présence de Tesseract OCR
+    tesseract_available = False
+    if ocr_enabled:
+        import shutil
+
+        tess_bin = shutil.which("tesseract")
+        if not tess_bin:
+            candidates = [
+                Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe"),
+                Path(r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"),
+                Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Tesseract-OCR" / "tesseract.exe",
+            ]
+            for candidate in candidates:
+                if candidate.exists():
+                    tess_bin = str(candidate)
+                    try:
+                        import pytesseract
+
+                        pytesseract.pytesseract.tesseract_cmd = str(candidate)
+                    except Exception:
+                        pass
+                    break
+        tesseract_available = tess_bin is not None
+        if not tesseract_available:
+            warnings.append(
+                "L'option OCR a été activée mais Tesseract-OCR n'est pas installé sur la machine hôte. "
+                "(Sous Windows, installez Tesseract-OCR ou utilisez Docker où il est préconfiguré). "
+                "L'extraction du texte vectoriel standard s'est déroulée normalement."
+            )
+
     # Chaque worker ouvre sa propre instance du document (indépendance totale)
     doc = pymupdf.open(pdf_path_str)
 
@@ -99,23 +129,19 @@ def _convert_pdf_batch_worker(
                 page_number = page_idx + 1
                 if not ocr_enabled:
                     warnings.append(
-                        f"Page {page_number} : aucun texte détecté (page probablement scannée). "
-                        "Activez l'option OCR pour tenter une extraction optique."
+                        f"Page {page_number} : aucun texte détecté (page de couverture ou image scannée)."
                     )
-                else:
-                    # L'utilisateur a demandé l'OCR sur les pages scannées
+                elif tesseract_available:
                     try:
                         import io
 
                         import pytesseract
                         from PIL import Image
 
-                        # Rendu de la page sous forme d'image matricielle haute résolution (DPI 150)
                         pix = page.get_pixmap(dpi=150)
                         img_bytes = pix.tobytes("png")
                         pil_img = Image.open(io.BytesIO(img_bytes))
 
-                        # Exécution de Tesseract OCR
                         ocr_text = pytesseract.image_to_string(pil_img, lang="fra+eng")
                         if ocr_text.strip():
                             scanned_pages_text[page_idx] = ocr_text.strip()
@@ -123,10 +149,11 @@ def _convert_pdf_batch_worker(
                         else:
                             warnings.append(f"Page {page_number} : aucun texte détecté même après OCR.")
                     except Exception as ocr_err:
-                        warnings.append(
-                            f"Page {page_number} : échec OCR ({ocr_err}). "
-                            "Assurez-vous que Tesseract-OCR est installé sur la machine."
-                        )
+                        warnings.append(f"Page {page_number} : échec OCR ({ocr_err}).")
+                else:
+                    warnings.append(
+                        f"Page {page_number} : page vide ou image scannée (OCR ignoré car Tesseract est absent)."
+                    )
 
         # 2. Conversion du lot en Markdown via pymupdf4llm
         # pymupdf4llm gère la structure, les titres, tableaux, blocs de code
