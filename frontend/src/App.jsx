@@ -19,7 +19,6 @@ import {
   ChevronUp,
   Image as ImageIcon,
   ScanText,
-  Cpu,
   X,
   StopCircle,
   CheckCircle2,
@@ -355,11 +354,6 @@ export default function App() {
         </div>
 
         <div className="nav-actions">
-          <div className="nav-pill" title="Allocation adaptative éco-mémoire : 0 processus enfant pour les PDF standards">
-            <Cpu size={13} className="text-emerald" />
-            <span>Éco-RAM &bull; &lt; 45 Mo</span>
-          </div>
-
           <button
             onClick={toggleTheme}
             className="btn-icon"
