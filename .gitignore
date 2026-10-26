@@ -1,0 +1,37 @@
+# Environnements virtuels Python
+.venv/
+venv/
+env/
+ENV/
+
+# Dépendances Node.js
+node_modules/
+frontend/node_modules/
+
+# Caches Python & tests
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.ruff_cache/
+*.log
+
+# Données temporaires et uploads de l'application (Zero-Disk)
+storage/uploads/*
+storage/outputs/*
+!storage/uploads/.gitkeep
+!storage/outputs/.gitkeep
+
+# Fichiers système et IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Builds Python (mais conserve frontend/dist pour exécution directe out-of-the-box)
+build/
+*.egg-info/
+*.spec

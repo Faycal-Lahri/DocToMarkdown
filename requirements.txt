@@ -1,0 +1,31 @@
+# ==============================================================================
+# DocToMarkdown - Fichier des dépendances Python
+# ==============================================================================
+# Chaque dépendance est annotée pour expliciter son rôle dans l'application.
+
+# --- Serveur Web & API ---
+fastapi>=0.115.0                # Framework web asynchrone haute performance
+uvicorn[standard]>=0.32.0        # Serveur ASGI pour FastAPI
+python-multipart>=0.0.12        # Traitement des formulaires et uploads multipart
+
+# --- Moteurs de conversion de documents ---
+pymupdf>=1.25.0                 # Moteur MuPDF en C++ : extraction ultra-rapide de texte/images PDF
+pymupdf4llm>=0.0.17             # Conversion avancée de PDF vers Markdown structuré
+python-docx>=1.1.2              # Manipulation et extraction structurée de documents Word (.docx)
+python-pptx>=1.0.2              # Extraction structurée de diapositives PowerPoint (.pptx)
+pypandoc_binary>=1.14           # Moteur Pandoc universel binaire pour conversion DOCX -> Markdown
+pillow>=11.0.0                  # Traitement d'images (pour extraction et OCR)
+pytesseract>=0.3.13             # Interface Python pour Tesseract OCR (PDF scannés)
+
+# --- Sécurité et utilitaires ---
+pydantic>=2.9.0                 # Validation des données et configuration fortement typée
+pydantic-settings>=2.6.0        # Gestion des variables d'environnement
+
+# --- Interface Bureau (Optionnelle) ---
+pywebview>=5.3.0                # Fenêtre native d'application de bureau sans navigateur externe
+
+# --- Qualité, Linting et Tests ---
+pytest>=8.3.0                   # Framework de tests unitaires et d'intégration
+pytest-asyncio>=0.24.0          # Support des tests asynchrones pour FastAPI
+httpx>=0.28.0                   # Client HTTP utilisé par TestClient de FastAPI
+ruff>=0.8.0                     # Linter et formateur de code ultra-rapide en Rust

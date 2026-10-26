@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  doctomarkdown:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: doctomarkdown-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - DTM_MAX_WORKERS=4
+      - DTM_MAX_FILE_SIZE_BYTES=524288000 # 500 Mo
+      - DTM_STORAGE_TTL_SECONDS=1800      # 30 min
+    volumes:
+      - dtm_storage:/app/storage
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  dtm_storage:

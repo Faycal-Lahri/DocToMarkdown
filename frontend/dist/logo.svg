@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <rect width="48" height="48" rx="12" fill="#09090b"/>
+  <rect x="0.5" y="0.5" width="47" height="47" rx="11.5" stroke="#27272a"/>
+  
+  <!-- Document Outline -->
+  <path d="M14 10C14 8.89543 14.8954 8 16 8H26.5858C27.1163 8 27.6251 8.21071 28 8.58579L33.4142 14C33.7893 14.3749 34 14.8837 34 15.4142V38C34 39.1046 33.1046 40 32 40H16C14.8954 40 14 39.1046 14 38V10Z" fill="#18181b" stroke="#3f3f46" stroke-width="2"/>
+  
+  <!-- Folded Corner -->
+  <path d="M26 8V13C26 14.1046 26.8954 15 28 15H33" stroke="#3f3f46" stroke-width="2" stroke-linecap="round"/>
+  
+  <!-- Markdown Symbol: M and Down Arrow in Indigo -->
+  <path d="M19 23V31M19 23L22 27L25 23M25 23V31" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M29 25V31M29 31L27 29M29 31L31 29" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

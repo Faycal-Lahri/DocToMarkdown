@@ -1,0 +1,26 @@
+# ==============================================================================
+# DocToMarkdown - Règles et Conventions du Projet (.cursorrules)
+# ==============================================================================
+
+# Langue et Documentation
+- Tous les commentaires de code et docstrings DOIVENT être rédigés en français.
+- Chaque nouveau fichier commence obligatoirement par un bloc d'en-tête expliquant son rôle, son architecture et les choix techniques ("pourquoi" et non seulement "quoi").
+- Chaque fonction et méthode possède une docstring détaillée (Paramètres, Retour, Exceptions levées).
+
+# Typage et Qualité de Code
+- Utiliser systématiquement les type hints Python (PEP 484, PEP 585, PEP 604).
+- Préférer 'pathlib.Path' à 'os.path'.
+- Respecter les normes PEP 8 validées par le linter et formateur 'ruff'. Aucun warning toléré.
+- Fonctions concises à responsabilité unique (Single Responsibility Principle).
+- Aucune valeur magique en dur : centraliser toutes les constantes et seuils dans 'app/config.py'.
+
+# Sécurité & Performance
+- Tout flux d'entrée de fichier volumineux DOIT être traité en streaming par blocs (1 Mo) sans chargement complet en RAM.
+- Valider systématiquement les octets magiques (Magic Bytes) et appliquer la protection anti zip-bomb sur les archives DOCX/PPTX.
+- Neutraliser toute tentative de traversée de chemin (Path Traversal) avec 'sanitize_filename'.
+- Multiprocessing obligatoire pour les PDF volumineux via 'concurrent.futures.ProcessPoolExecutor'.
+- Ne jamais bloquer la boucle d'événements asyncio principale : déporter les opérations CPU-intensives dans des threads ou sous-processus.
+
+# Tests et Validation
+- Tout nouveau convertisseur ou endpoint DOIT s'accompagner de tests unitaires ou d'intégration exécutables avec 'pytest'.
+- Aucun fichier de test binaire externe : les documents de tests doivent être synthétisés dynamiquement en mémoire.
